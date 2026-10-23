@@ -1,4 +1,7 @@
 # QRNG-DQI-Optimizer ⚛️
+
+[![QRNG-DQI-Optimizer CI](https://github.com/arisullae/qrng-dqi-optimizer/actions/workflows/ci.yml/badge.svg)](https://github.com/arisullae/qrng-dqi-optimizer/actions/workflows/ci.yml)
+
 > **Google Quantum AI \$150K Circuit Compression Competition (Benchmark II)**  
 > *Quantum Random Number Generator (QRNG) Entropy Sourcing & Decoded Quantum Interferometry (DQI) Fault-Tolerant Circuit Optimization Engine*
 
