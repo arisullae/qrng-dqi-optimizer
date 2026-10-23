@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "qrng-dqi-optimizer"
+version = "0.1.0"
+description = "QRNG-DQI-Optimizer for Google Quantum AI Circuit Compression Competition"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "cirq>=1.3.0",
+    "qualtran>=0.4.0",
+    "numpy>=1.24.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "ruff>=0.1.0",
+]
