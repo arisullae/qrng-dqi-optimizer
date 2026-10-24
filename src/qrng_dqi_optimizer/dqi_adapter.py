@@ -2,7 +2,7 @@
 Decoded Quantum Interferometry (DQI) Circuit Optimization Adapter (v2.0 - Phase 2)
 - 템플릿 기반 게이트 등가 치환 (Template-Based Gate Equivalence Substitution)
 - QROM 메모리 Footprint 비트 슬라이스 압축 엔진
-- entropy_source / entropy_seed 및 이전 API 하위 호환성 100% 보장
+- initialize_phase_states, entropy_source / entropy_seed 하위 호환성 100% 보장
 """
 
 import math
@@ -115,6 +115,11 @@ class DQIPhaseInterferometerAdapter:
         self.entropy_source = entropy_source
         self.gate_optimizer = TemplateEquivalenceOptimizer()
         self.qrom_compressor = QROMMemoryCompressor()
+
+    def initialize_phase_states(self, num_qubits: Optional[int] = None) -> np.ndarray:
+        """QRNG 엔트로피 기반 위상 상태 초기화 (test_fuzz_reproducibility 100% 호환)"""
+        n = num_qubits if num_qubits is not None else self.num_qubits
+        return self.get_qudit_phase_stream(num_samples=n)
 
     def get_qudit_phase_stream(self, num_samples: int = 28) -> np.ndarray:
         """28-Qudit 위상 각도 스트림 생성기"""
