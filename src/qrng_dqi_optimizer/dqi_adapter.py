@@ -2,7 +2,7 @@
 Decoded Quantum Interferometry (DQI) Circuit Optimization Adapter (v2.0 - Phase 2)
 - 템플릿 기반 게이트 등가 치환 (Template-Based Gate Equivalence Substitution)
 - QROM 메모리 Footprint 비트 슬라이스 압축 엔진
-- 기존 클래스명(DQIPhaseInterferometerAdapter) 및 __init__.py 하위 호환성 100% 보장
+- entropy_source / entropy_seed 및 이전 API 하위 호환성 100% 보장
 """
 
 import math
@@ -48,8 +48,10 @@ class TemplateEquivalenceOptimizer:
 
                     # Rule 2: 연속 위상 회전 게이트 병합 (RZ + RZ -> RZ)
                     if g1.get("gate") == "RZ" and g2.get("gate") == "RZ" and g1.get("qubit") == g2.get("qubit"):
-                        theta1 = g1.get("params", [0.0])[0] if isinstance(g1.get("params"), list) else float(g1.get("params", 0.0))
-                        theta2 = g2.get("params", [0.0])[0] if isinstance(g2.get("params"), list) else float(g2.get("params", 0.0))
+                        p1 = g1.get("params", [0.0])
+                        p2 = g2.get("params", [0.0])
+                        theta1 = float(p1[0]) if isinstance(p1, list) else float(p1)
+                        theta2 = float(p2[0]) if isinstance(p2, list) else float(p2)
                         merged_theta = (theta1 + theta2) % (2.0 * math.pi)
 
                         if abs(merged_theta) > self.tolerance and abs(merged_theta - 2.0 * math.pi) > self.tolerance:
@@ -102,24 +104,50 @@ class QROMMemoryCompressor:
 class DQIPhaseInterferometerAdapter:
     """DQI (Decoded Quantum Interferometry) 최적화 어댑터 메인 클래스"""
 
-    def __init__(self, entropy_seed: Optional[Dict[str, Any]] = None, num_qubits: int = 16):
+    def __init__(
+        self,
+        entropy_seed: Optional[Dict[str, Any]] = None,
+        entropy_source: Optional[Any] = None,
+        num_qubits: int = 16,
+    ):
         self.num_qubits = num_qubits
         self.entropy_seed = entropy_seed
+        self.entropy_source = entropy_source
         self.gate_optimizer = TemplateEquivalenceOptimizer()
         self.qrom_compressor = QROMMemoryCompressor()
 
     def get_qudit_phase_stream(self, num_samples: int = 28) -> np.ndarray:
         """28-Qudit 위상 각도 스트림 생성기"""
-        if self.entropy_seed and "entropy" in self.entropy_seed:
-            entropy_val = self.entropy_seed["entropy"]
+        source_or_seed = self.entropy_source or self.entropy_seed
+
+        if source_or_seed is not None:
+            entropy_bytes = None
+
+            # QRNGEntropySource 객체 또는 딕셔너리에서 엔트로피 추출
+            if hasattr(source_or_seed, "generate_entropy"):
+                res = source_or_seed.generate_entropy()
+                entropy_val = res.get("entropy") if isinstance(res, dict) else res
+            elif hasattr(source_or_seed, "entropy"):
+                entropy_val = getattr(source_or_seed, "entropy")
+            elif isinstance(source_or_seed, dict) and "entropy" in source_or_seed:
+                entropy_val = source_or_seed["entropy"]
+            else:
+                entropy_val = source_or_seed
+
             if isinstance(entropy_val, str):
-                entropy_bytes = bytes.fromhex(entropy_val)
+                try:
+                    entropy_bytes = bytes.fromhex(entropy_val)
+                except ValueError:
+                    entropy_bytes = entropy_val.encode("utf-8")
             elif isinstance(entropy_val, (bytes, bytearray)):
                 entropy_bytes = bytes(entropy_val)
-            else:
+            elif isinstance(entropy_val, (int, float)):
                 entropy_bytes = str(entropy_val).encode("utf-8")
-            arr = np.frombuffer(entropy_bytes, dtype=np.uint8)
-            return (arr[:num_samples].astype(float) / 255.0) * 2.0 * math.pi
+
+            if entropy_bytes:
+                arr = np.frombuffer(entropy_bytes, dtype=np.uint8)
+                return (arr[:num_samples].astype(float) / 255.0) * 2.0 * math.pi
+
         return np.linspace(0, 2.0 * math.pi, num_samples)
 
     def synthesize_qudit_phases(self, phase_stream: np.ndarray) -> np.ndarray:
@@ -155,5 +183,5 @@ class DQIPhaseInterferometerAdapter:
         }
 
 
-# 하위 호환성 및 간결성을 위한 별칭 설정
+# 하위 호환성 별칭 설정
 DQIAdapter = DQIPhaseInterferometerAdapter
