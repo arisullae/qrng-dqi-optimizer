@@ -16,8 +16,8 @@ jobs:
       fail-fast: false # 특정 조합이 실패해도 나머지 테스트 조합을 끝까지 진행
       matrix:
         python-version: ["3.10", "3.11", "3.12"]
-        num-qubits: [16, 32, 64] # 큐비트 규모별 테스트 조건
-        sample-size: [1024, 4096, 16384] # 엔트로피 샘플 크기별 테스트 조건
+        num-qubits: [16, 32, 64, 128] # 큐비트 규모별 테스트 조건
+        sample-size: [1024, 4096, 16384, 65536] # 엔트로피 샘플 크기별 테스트 조건
 
     steps:
       - name: Checkout Repository
