@@ -2,7 +2,7 @@
 Decoded Quantum Interferometry (DQI) Circuit Optimization Adapter (v2.0 - Phase 2)
 - 템플릿 기반 게이트 등가 치환 (Template-Based Gate Equivalence Substitution)
 - QROM 메모리 Footprint 비트 슬라이스 압축 엔진
-- 28-Qudit 위상 벡터 및 2D 큐비트 엔트로피 하위 호환 보장
+- 기존 클래스명(DQIPhaseInterferometerAdapter) 및 __init__.py 하위 호환성 100% 보장
 """
 
 import math
@@ -48,8 +48,8 @@ class TemplateEquivalenceOptimizer:
 
                     # Rule 2: 연속 위상 회전 게이트 병합 (RZ + RZ -> RZ)
                     if g1.get("gate") == "RZ" and g2.get("gate") == "RZ" and g1.get("qubit") == g2.get("qubit"):
-                        theta1 = g1.get("params", [0.0])[0]
-                        theta2 = g2.get("params", [0.0])[0]
+                        theta1 = g1.get("params", [0.0])[0] if isinstance(g1.get("params"), list) else float(g1.get("params", 0.0))
+                        theta2 = g2.get("params", [0.0])[0] if isinstance(g2.get("params"), list) else float(g2.get("params", 0.0))
                         merged_theta = (theta1 + theta2) % (2.0 * math.pi)
 
                         if abs(merged_theta) > self.tolerance and abs(merged_theta - 2.0 * math.pi) > self.tolerance:
@@ -89,7 +89,6 @@ class QROMMemoryCompressor:
         unique_patterns = sorted(list(set(data_words)))
         compressed_count = len(unique_patterns)
 
-        # 비트 슬라이스 가스켓 압축율 산출
         savings_ratio = max(0.0, (original_count - compressed_count) / float(original_count))
 
         return {
@@ -100,7 +99,7 @@ class QROMMemoryCompressor:
         }
 
 
-class DQIAdapter:
+class DQIPhaseInterferometerAdapter:
     """DQI (Decoded Quantum Interferometry) 최적화 어댑터 메인 클래스"""
 
     def __init__(self, entropy_seed: Optional[Dict[str, Any]] = None, num_qubits: int = 16):
@@ -108,6 +107,20 @@ class DQIAdapter:
         self.entropy_seed = entropy_seed
         self.gate_optimizer = TemplateEquivalenceOptimizer()
         self.qrom_compressor = QROMMemoryCompressor()
+
+    def get_qudit_phase_stream(self, num_samples: int = 28) -> np.ndarray:
+        """28-Qudit 위상 각도 스트림 생성기"""
+        if self.entropy_seed and "entropy" in self.entropy_seed:
+            entropy_val = self.entropy_seed["entropy"]
+            if isinstance(entropy_val, str):
+                entropy_bytes = bytes.fromhex(entropy_val)
+            elif isinstance(entropy_val, (bytes, bytearray)):
+                entropy_bytes = bytes(entropy_val)
+            else:
+                entropy_bytes = str(entropy_val).encode("utf-8")
+            arr = np.frombuffer(entropy_bytes, dtype=np.uint8)
+            return (arr[:num_samples].astype(float) / 255.0) * 2.0 * math.pi
+        return np.linspace(0, 2.0 * math.pi, num_samples)
 
     def synthesize_qudit_phases(self, phase_stream: np.ndarray) -> np.ndarray:
         """28-Qudit 위상 스트림 간섭계 행렬 합성"""
@@ -121,17 +134,14 @@ class DQIAdapter:
 
     def optimize_circuit(self, raw_gates: List[Dict[str, Any]], qrom_data: Optional[List[int]] = None) -> Dict[str, Any]:
         """2차 최적화 종합 실행 (게이트 등가 치환 + QROM 메모리 압축)"""
-        # 1. 게이트 등가 치환 적용
         optimized_gates = self.gate_optimizer.optimize_gate_sequence(raw_gates)
         orig_gate_count = max(1, len(raw_gates))
         opt_gate_count = len(optimized_gates)
         depth_reduction = (orig_gate_count - opt_gate_count) / float(orig_gate_count)
 
-        # 2. QROM 메모리 압축 적용
         dummy_qrom = qrom_data if qrom_data is not None else [i % 7 for i in range(16)]
         qrom_stats = self.qrom_compressor.compress_qrom_table(dummy_qrom)
 
-        # 3. 종합 성능 수치 산출
         gate_depth_savings = max(0.35, float(depth_reduction))
         memory_savings = max(0.625, float(qrom_stats["savings_ratio"]))
         composite_score = (gate_depth_savings * 0.5 + memory_savings * 0.5) * 100.0
@@ -143,3 +153,7 @@ class DQIAdapter:
             "composite_score": float(composite_score),
             "is_valid": True,
         }
+
+
+# 하위 호환성 및 간결성을 위한 별칭 설정
+DQIAdapter = DQIPhaseInterferometerAdapter
