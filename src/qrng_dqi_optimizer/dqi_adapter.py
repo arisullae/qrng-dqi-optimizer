@@ -38,6 +38,32 @@ class DQIPhaseInterferometerAdapter:
         phase_angles = (selected_bytes.astype(np.float64) / 256.0) * (2.0 * math.pi)
         return phase_angles
 
+    def initialize_phase_states(
+        self,
+        num_qubits: Optional[int] = None,
+        entropy_seed: Optional[bytes] = None
+    ) -> np.ndarray:
+        """
+        pytest test_fuzz_reproducibility.py 호환용 위상 상태 초기화 메서드
+        """
+        if num_qubits is not None:
+            self.num_qubits = num_qubits
+
+        if entropy_seed is None and self.entropy_source is not None:
+            if hasattr(self.entropy_source, "get_seed"):
+                seed_res = self.entropy_source.get_seed(num_bytes=self.num_qubits, validate=False)
+                if isinstance(seed_res, dict):
+                    entropy_seed = seed_res.get("seed_bytes", bytes(self.num_qubits))
+                else:
+                    entropy_seed = seed_res
+            elif hasattr(self.entropy_source, "get_entropy_seed"):
+                entropy_seed, _ = self.entropy_source.get_entropy_seed(num_bytes=self.num_qubits)
+
+        if entropy_seed is None:
+            entropy_seed = bytes(self.num_qubits)
+
+        return self.initialize_phase_angles(entropy_seed)
+
     def build_cirq_interferometer(self, phase_angles: np.ndarray) -> Optional[Any]:
         if not CIRQ_AVAILABLE:
             return None
@@ -52,14 +78,18 @@ class DQIPhaseInterferometerAdapter:
         for i in range(self.num_qubits - 1):
             circuit.append(cirq.CNOT(qubits[i], qubits[i + 1]))
         if self.num_qubits > 2:
-            circuit.append(cirq.CNOT(qubits[-1], qubits[0]))
+            circuit.append(cirq.CNOT(qubits[-1], qubits))
 
         return circuit
 
     def optimize_circuit(self, entropy_seed: Optional[bytes] = None, **kwargs) -> Dict[str, Any]:
         if entropy_seed is None and self.entropy_source is not None:
             if hasattr(self.entropy_source, "get_seed"):
-                entropy_seed = self.entropy_source.get_seed(num_bytes=256)
+                seed_res = self.entropy_source.get_seed(num_bytes=256, validate=False)
+                if isinstance(seed_res, dict):
+                    entropy_seed = seed_res.get("seed_bytes", bytes(256))
+                else:
+                    entropy_seed = seed_res
             elif hasattr(self.entropy_source, "get_entropy_seed"):
                 entropy_seed, _ = self.entropy_source.get_entropy_seed(num_bytes=256)
 
