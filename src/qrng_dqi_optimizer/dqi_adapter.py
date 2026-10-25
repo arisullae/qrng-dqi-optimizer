@@ -1,20 +1,19 @@
 """
-Decoded Quantum Interferometry (DQI) Circuit Optimization Adapter (v2.0 - Phase 2)
-- 템플릿 기반 게이트 등가 치환 (Template-Based Gate Equivalence Substitution)
-- QROM 메모리 Footprint 비트 슬라이스 압축 엔진
-- [0.0, 2*pi) 엄격 미만 상한 범위 및 자가테스트 100% 통과 보장
+Decoded Quantum Interferometry (DQI) Circuit Optimization Adapter (v2.1 - Clean)
+- 인위적 하한선(max Floor) 및 가짜 보정 수치 완전 제거
+- 실제 회로 게이트 상쇄 및 QROM 압축 결과만 정직하게 반환
 """
 
 import math
 import logging
 import numpy as np
-from typing import Dict, Any, List, Optional, Tuple, Union
+from typing import Dict, Any, List, Optional
 
 logger = logging.getLogger("qrng_dqi_optimizer.dqi_adapter")
 
 
 class TemplateEquivalenceOptimizer:
-    """템플릿 기반 게이트 등가 치환 및 회로 깊이 감축 최적화기"""
+    """템플릿 기반 게이트 등가 치환 최적화기 (순수 계산)"""
 
     SELF_INVERSE_GATES = {"H", "X", "Y", "Z", "CNOT", "SWAP"}
 
@@ -22,7 +21,6 @@ class TemplateEquivalenceOptimizer:
         self.tolerance = tolerance
 
     def optimize_gate_sequence(self, gates: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """게이트 시퀀스 연속 상쇄 및 위상 합성 최적화"""
         if not gates:
             return []
 
@@ -40,13 +38,13 @@ class TemplateEquivalenceOptimizer:
                 if i + 1 < n:
                     g2 = current_gates[i + 1]
 
-                    # Rule 1: 동일 자기-역연산 게이트 상쇄 (H-H, CNOT-CNOT 등)
+                    # Rule 1: 동일 자기-역연산 게이트 연속 상쇄 (H-H, CNOT-CNOT 등)
                     if self._is_identical_gate(g1, g2) and g1.get("gate") in self.SELF_INVERSE_GATES:
                         i += 2
                         optimized = True
                         continue
 
-                    # Rule 2: 연속 위상 회전 게이트 병합 (RZ + RZ -> RZ)
+                    # Rule 2: 연속 위상 회전 게이트 병합 (RZ + RZ)
                     if g1.get("gate") == "RZ" and g2.get("gate") == "RZ" and g1.get("qubit") == g2.get("qubit"):
                         p1 = g1.get("params", [0.0])
                         p2 = g2.get("params", [0.0])
@@ -81,7 +79,7 @@ class TemplateEquivalenceOptimizer:
 
 
 class QROMMemoryCompressor:
-    """QROM Look-up Table 비트 슬라이스 접기 및 메모리 Footprint 압축기"""
+    """QROM 테이블 비트 슬라이스 압축기 (순수 계산)"""
 
     def compress_qrom_table(self, data_words: List[int]) -> Dict[str, Any]:
         if not data_words:
@@ -91,7 +89,8 @@ class QROMMemoryCompressor:
         unique_patterns = sorted(list(set(data_words)))
         compressed_count = len(unique_patterns)
 
-        savings_ratio = max(0.0, (original_count - compressed_count) / float(original_count))
+        # 하한선 없이 실제 유니크 패턴 감소 비율만 정직하게 계산
+        savings_ratio = (original_count - compressed_count) / float(original_count) if original_count > 0 else 0.0
 
         return {
             "original_words": original_count,
@@ -102,7 +101,7 @@ class QROMMemoryCompressor:
 
 
 class DQIPhaseInterferometerAdapter:
-    """DQI (Decoded Quantum Interferometry) 최적화 어댑터 메인 클래스"""
+    """DQI 어댑터 메인 클래스 (정직한 연산 출력)"""
 
     def __init__(
         self,
@@ -117,18 +116,14 @@ class DQIPhaseInterferometerAdapter:
         self.qrom_compressor = QROMMemoryCompressor()
 
     def initialize_phase_states(self, num_qubits: Optional[int] = None) -> np.ndarray:
-        """QRNG 엔트로피 기반 위상 상태 초기화 (test_fuzz_reproducibility 100% 호환)"""
         n = num_qubits if num_qubits is not None else self.num_qubits
         return self.get_qudit_phase_stream(num_samples=n)
 
     def get_qudit_phase_stream(self, num_samples: int = 28) -> np.ndarray:
-        """28-Qudit 위상 각도 스트림 생성기 ([0, 2*pi) 범위 엄격 보장)"""
         source_or_seed = self.entropy_source or self.entropy_seed
 
         if source_or_seed is not None:
             entropy_bytes = None
-
-            # QRNGEntropySource 객체 또는 딕셔너리에서 엔트로피 추출
             if hasattr(source_or_seed, "generate_entropy"):
                 res = source_or_seed.generate_entropy()
                 entropy_val = res.get("entropy") if isinstance(res, dict) else res
@@ -146,8 +141,6 @@ class DQIPhaseInterferometerAdapter:
                     entropy_bytes = entropy_val.encode("utf-8")
             elif isinstance(entropy_val, (bytes, bytearray)):
                 entropy_bytes = bytes(entropy_val)
-            elif isinstance(entropy_val, (int, float)):
-                entropy_bytes = str(entropy_val).encode("utf-8")
 
             if entropy_bytes and len(entropy_bytes) > 0:
                 arr = np.frombuffer(entropy_bytes, dtype=np.uint8)
@@ -155,43 +148,41 @@ class DQIPhaseInterferometerAdapter:
                     arr = np.resize(arr, num_samples)
                 else:
                     arr = arr[:num_samples]
-                # / 256.0 으로 나누어 [0, 2*pi) 범위를 엄격하게 충족 (2*pi 미만)
                 return (arr.astype(float) / 256.0) * 2.0 * math.pi
 
         return np.linspace(0, 2.0 * math.pi, num_samples, endpoint=False)
 
-    def synthesize_qudit_phases(self, phase_stream: np.ndarray) -> np.ndarray:
-        """28-Qudit 위상 스트림 간섭계 행렬 합성"""
-        if phase_stream is None or len(phase_stream) == 0:
-            return np.zeros((self.num_qubits, self.num_qubits))
-
-        reshaped_len = min(len(phase_stream), self.num_qubits * self.num_qubits)
-        matrix = np.zeros(self.num_qubits * self.num_qubits)
-        matrix[:reshaped_len] = phase_stream[:reshaped_len]
-        return matrix.reshape((self.num_qubits, self.num_qubits))
-
     def optimize_circuit(self, raw_gates: List[Dict[str, Any]], qrom_data: Optional[List[int]] = None) -> Dict[str, Any]:
-        """2차 최적화 종합 실행 (게이트 등가 치환 + QROM 메모리 압축)"""
+        """실제 측정 수치만 계측하여 반환 (max 하한선 보정 완전 제거)"""
         optimized_gates = self.gate_optimizer.optimize_gate_sequence(raw_gates)
-        orig_gate_count = max(1, len(raw_gates))
+        orig_gate_count = len(raw_gates)
         opt_gate_count = len(optimized_gates)
-        depth_reduction = (orig_gate_count - opt_gate_count) / float(orig_gate_count)
 
-        dummy_qrom = qrom_data if qrom_data is not None else [i % 7 for i in range(16)]
-        qrom_stats = self.qrom_compressor.compress_qrom_table(dummy_qrom)
+        # 게이트 감축률 정직 연산 (줄어들지 않았으면 0.0)
+        if orig_gate_count > 0:
+            depth_reduction = float(orig_gate_count - opt_gate_count) / float(orig_gate_count)
+        else:
+            depth_reduction = 0.0
 
-        gate_depth_savings = max(0.35, float(depth_reduction))
-        memory_savings = max(0.625, float(qrom_stats["savings_ratio"]))
-        composite_score = (gate_depth_savings * 0.5 + memory_savings * 0.5) * 100.0
+        # QROM 압축률 정직 연산
+        if qrom_data is not None and len(qrom_data) > 0:
+            qrom_stats = self.qrom_compressor.compress_qrom_table(qrom_data)
+            memory_savings = float(qrom_stats["savings_ratio"])
+        else:
+            memory_savings = 0.0
+
+        # 보정 없는 순수 Composite Score
+        composite_score = (depth_reduction * 0.5 + memory_savings * 0.5) * 100.0
 
         return {
             "optimized_gates": optimized_gates,
-            "gate_depth_reduction": float(gate_depth_savings),
-            "qrom_memory_savings": float(memory_savings),
-            "composite_score": float(composite_score),
+            "raw_gate_count": orig_gate_count,
+            "optimized_gate_count": opt_gate_count,
+            "gate_depth_reduction": depth_reduction,
+            "qrom_memory_savings": memory_savings,
+            "composite_score": composite_score,
             "is_valid": True,
         }
 
 
-# 하위 호환성 별칭 설정
 DQIAdapter = DQIPhaseInterferometerAdapter
