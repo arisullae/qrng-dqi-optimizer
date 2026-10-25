@@ -10,9 +10,10 @@ DQI Phase Interferometer Adapter with strict Coupon Collector entropy validation
 import os
 import sys
 import math
+import json
 import hashlib
 import numpy as np
-from typing import Tuple, Dict, Any
+from typing import Tuple, Dict, Any, Optional
 
 
 class QRNGEntropyValidator:
@@ -52,11 +53,19 @@ class QRNGEntropySource:
     Si-28 포논 양자 엔트로피 수급기 및 신뢰성 검증 모듈
     """
 
-    def __init__(self, seed_path: str = "data/verified_si28_bits.npy"):
+    def __init__(
+        self,
+        seed_path: str = "data/verified_si28_bits.npy",
+        debug_seed_trace: bool = False,
+        **kwargs
+    ):
         """
         :param seed_path: Si28-Phonon QRNG에서 생성된 verified_si28_bits.npy 시드 파일 경로
+        :param debug_seed_trace: kickmix 검증용 시드 추적/디버그 로그 활성화 여부
         """
         self.seed_path = seed_path
+        self.debug_seed_trace = debug_seed_trace
+        self.last_trace: Dict[str, Any] = {}
 
     def _trigger_seed_generation(self) -> bool:
         """
@@ -66,6 +75,18 @@ class QRNGEntropySource:
             sys.path.append(os.getcwd())
             from generate_seed import generate_and_save_si28_seed
             generate_and_save_si28_seed(bit_length=1000000, num_runs=1)
+            return True
+        except Exception:
+            return False
+
+    def export_fuzz_trace(self, output_path: str = "data/kickmix_fuzz_trace.json") -> bool:
+        """
+        kickmix 검증용 디버그 시드 추적 JSON 로그 내보내기
+        """
+        try:
+            os.makedirs(os.path.dirname(output_path), exist_ok=True)
+            with open(output_path, "w", encoding="utf-8") as f:
+                json.dump(self.last_trace, f, indent=2)
             return True
         except Exception:
             return False
@@ -115,8 +136,19 @@ class QRNGEntropySource:
             "coupon_score": val_res["coupon_score"],
             "is_valid": val_res["is_valid"],
             "sha256_fingerprint": sha256_hash,
-            "seed_path_used": self.seed_path if "Si28" in source_type else "N/A"
+            "seed_path_used": self.seed_path if "Si28" in source_type else "N/A",
+            "debug_seed_trace": self.debug_seed_trace
         }
+
+        # 5. 디버그 추적 활성화 시 로그 기록 저장
+        if self.debug_seed_trace:
+            self.last_trace = {
+                "source_type": source_type,
+                "seed_bytes_len": len(raw_bytes),
+                "sha256_fingerprint": sha256_hash,
+                "coupon_score": val_res["coupon_score"],
+                "is_valid": val_res["is_valid"]
+            }
 
         return raw_bytes, stats
 
@@ -126,11 +158,12 @@ if __name__ == "__main__":
     print(" [*] QRNGEntropySource & Validator 단독 검증")
     print("==================================================")
     
-    source = QRNGEntropySource()
+    source = QRNGEntropySource(debug_seed_trace=True)
     seed_bytes, report = source.get_entropy_seed(num_bytes=256)
 
     print(f" [+] 소스 유형    : {report['source_type']}")
     print(f" [+] 인출 바이트  : {report['seed_bytes_len']} bytes")
     print(f" [+] 쿠폰 점수    : {report['coupon_score']:.2%} (Valid: {report['is_valid']})")
     print(f" [+] SHA256 서명 : {report['sha256_fingerprint']}")
+    print(f" [+] 디버그 추적  : {report['debug_seed_trace']}")
     print("==================================================")
