@@ -107,13 +107,13 @@ class QRNGEntropySource:
                 
                 selected_bits = bit_array[:req_bits]
                 raw_bytes = np.packbits(selected_bits).tobytes()
-                source_type = "Si28_Phonon_Quantum_QPU"
+                source_type = "Si28_Phonon_Quantum_QPU (OS_SECRETS_ENTROPY)"
             except Exception as e:
                 raw_bytes = os.urandom(num_bytes)
-                source_type = f"OS_Physical_Entropy_Fallback (Error: {str(e)})"
+                source_type = f"URANDOM_FALLBACK (Error: {str(e)})"
         else:
             raw_bytes = os.urandom(num_bytes)
-            source_type = "OS_Physical_Entropy_Fallback"
+            source_type = "URANDOM_FALLBACK"
 
         val_res = QRNGEntropyValidator.validate_coupon_score(raw_bytes)
         sha256_hash = hashlib.sha256(raw_bytes).hexdigest()
