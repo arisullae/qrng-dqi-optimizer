@@ -78,7 +78,7 @@ class DQIPhaseInterferometerAdapter:
         for i in range(self.num_qubits - 1):
             circuit.append(cirq.CNOT(qubits[i], qubits[i + 1]))
         if self.num_qubits > 2:
-            circuit.append(cirq.CNOT(qubits[-1], qubits))
+            circuit.append(cirq.CNOT(qubits[-1], qubits[0]))
 
         return circuit
 
