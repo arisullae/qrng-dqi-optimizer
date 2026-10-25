@@ -22,22 +22,24 @@ class QRNGEntropyValidator:
     @staticmethod
     def validate_coupon_score(raw_bytes: bytes) -> Dict[str, Any]:
         if not raw_bytes or len(raw_bytes) == 0:
-            return {"unique_bytes_count": 0, "coupon_score": 0.0, "is_valid": False}
+            return {"unique_bytes_count": 0, "coupon_score": 0.0, "is_valid": False, "is_validated": False}
 
         unique_bytes_count = len(set(raw_bytes))
         max_possible_unique = min(256, len(raw_bytes))
         coupon_score = unique_bytes_count / float(max_possible_unique)
+        is_pass = coupon_score >= 0.50
 
         return {
             "unique_bytes_count": unique_bytes_count,
             "coupon_score": coupon_score,
-            "is_valid": coupon_score >= 0.50
+            "is_valid": is_pass,
+            "is_validated": is_pass
         }
 
     @staticmethod
     def validate_seed(raw_bytes: bytes) -> bool:
         res = QRNGEntropyValidator.validate_coupon_score(raw_bytes)
-        return res["is_valid"]
+        return res["is_validated"]
 
 
 class QRNGEntropySource:
@@ -72,13 +74,14 @@ class QRNGEntropySource:
             "last_trace": self.last_trace,
             "total_calls": len(self.trace_history)
         }
+        json_str = json.dumps(trace_data, indent=2)
         try:
             os.makedirs(os.path.dirname(output_path), exist_ok=True)
             with open(output_path, "w", encoding="utf-8") as f:
-                json.dump(trace_data, f, indent=2)
+                f.write(json_str)
         except Exception:
             pass
-        return json.dumps(trace_data, indent=2)
+        return json_str
 
     def export_fuzz_trace(self, output_path: str = "data/kickmix_fuzz_trace.json") -> bool:
         """이전 호환성용 파일 내보내기 메서드"""
@@ -121,7 +124,9 @@ class QRNGEntropySource:
             "unique_bytes_count": val_res["unique_bytes_count"],
             "coupon_score": val_res["coupon_score"],
             "is_valid": val_res["is_valid"],
+            "is_validated": val_res["is_validated"],
             "sha256_fingerprint": sha256_hash,
+            "sha256_digest": sha256_hash,
             "seed_path_used": self.seed_path if "Si28" in source_type else "N/A",
             "debug_seed_trace": self.debug_seed_trace
         }
@@ -131,8 +136,10 @@ class QRNGEntropySource:
                 "source_type": source_type,
                 "seed_bytes_len": len(raw_bytes),
                 "sha256_fingerprint": sha256_hash,
+                "sha256_digest": sha256_hash,
                 "coupon_score": val_res["coupon_score"],
-                "is_valid": val_res["is_valid"]
+                "is_valid": val_res["is_valid"],
+                "is_validated": val_res["is_validated"]
             }
             self.trace_history.append(self.last_trace)
 
@@ -141,15 +148,25 @@ class QRNGEntropySource:
     def get_seed(self, num_bytes: int = 256, validate: bool = False, **kwargs) -> Union[bytes, Dict[str, Any]]:
         """
         pytest test_fuzz_reproducibility.py 인터페이스 호환용 시드 인출 메서드
-        validate=True 일 경우 Dict 반환 ('seed_bytes' 키 포함)
+        validate=True 일 경우 'metadata' 중첩 구조와 'is_validated' 키를 포함한 Dict 반환
         """
         raw_bytes, stats = self.get_entropy_seed(num_bytes=num_bytes)
         if validate:
             return {
                 "seed_bytes": raw_bytes,
+                "metadata": {
+                    "is_validated": stats["is_validated"],
+                    "is_valid": stats["is_valid"],
+                    "coupon_score": stats["coupon_score"],
+                    "source_type": stats["source_type"],
+                    "sha256_digest": stats["sha256_digest"],
+                    "sha256_fingerprint": stats["sha256_fingerprint"]
+                },
                 "coupon_score": stats["coupon_score"],
                 "is_valid": stats["is_valid"],
+                "is_validated": stats["is_validated"],
                 "source_type": stats["source_type"],
-                "sha256_fingerprint": stats["sha256_fingerprint"]
+                "sha256_fingerprint": stats["sha256_fingerprint"],
+                "sha256_digest": stats["sha256_digest"]
             }
         return raw_bytes
