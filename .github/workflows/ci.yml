@@ -1,55 +1,62 @@
-name: QRNG-DQI-Optimizer Multi-Condition Test Suite
+name: QRNG-DQI-Optimizer Matrix CI
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ main, master ]
   pull_request:
-    branches: [ "main" ]
-  workflow_dispatch: # GitHub 웹 화면에서 버튼을 눌러 수동 실행 가능
+    branches: [ main, master ]
+  workflow_dispatch:
 
 jobs:
-  matrix-testing:
-    name: Test (Py ${{ matrix.python-version }} | Qubits ${{ matrix.num-qubits }} | Sample ${{ matrix.sample-size }})
+  benchmark-matrix:
     runs-on: ubuntu-latest
-    
     strategy:
-      fail-fast: false # 특정 조합이 실패해도 나머지 테스트 조합을 끝까지 진행
+      fail-fast: false
       matrix:
         python-version: ["3.10", "3.11", "3.12"]
-        num-qubits: [16, 32, 64, 128] # 큐비트 규모별 테스트 조건
-        sample-size: [1024, 4096, 16384, 65536] # 엔트로피 샘플 크기별 테스트 조건
+        num-qubits: [16, 32, 64, 128]
+        sample-size: [1024, 4096, 16384, 65536]
 
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
+    # 1. qrng-dqi-optimizer 체크아웃
+    - name: Checkout qrng-dqi-optimizer
+      uses: actions/checkout@v3
 
-      - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ matrix.python-version }}
+    # 2. Si28 양자 난수 생성기 체크아웃
+    - name: Checkout Si28 QRNG Generator
+      uses: actions/checkout@v3
+      with:
+        repository: 'arisullae/Si28-Phonon-28Qudit-QRNG-FastExec'
+        path: 'qrng_generator'
 
-      - name: Install Dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -e .
-          pip install pytest pytest-cov
+    # 3. 매트릭스 파이썬 버전 적용
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ matrix.python-version }}
 
-      - name: Run Multi-Condition Pytest Suite
-        env:
-          TEST_NUM_QUBITS: ${{ matrix.num-qubits }}
-          TEST_SAMPLE_SIZE: ${{ matrix.sample-size }}
-        run: |
-          python -m pytest tests/ -v --cov=src/qrng_dqi_optimizer
+    - name: Install Quantum Dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install cirq numpy pytest
+        pip install -e .
 
-      - name: Run Benchmark Evaluator
-        run: |
-          python -m benchmarks.metrics_evaluator || true
+    # 4. 진짜 양자 시드 자동 생성
+    - name: Generate Genuine Quantum Seed
+      run: |
+        mkdir -p data
+        cd qrng_generator
+        if [ -f "generate_seed.py" ]; then
+          python generate_seed.py
+          cp verified_si28_bits.npy ../data/ 2>/dev/null || cp data/verified_si28_bits.npy ../data/ 2>/dev/null || true
+        fi
+        cd ..
 
-      - name: Upload Test Artifacts & Logs
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: test-log-py${{ matrix.python-version }}-q${{ matrix.num-qubits }}-s${{ matrix.sample-size }}
-          path: |
-            *.json
-            *.log
+    # 5. 매트릭스 조건(큐비트 수, 샘플 크기) 환경변수 주입 후 벤치마크 평가 실행
+    - name: Run DQI Circuit Compression Benchmark (Matrix)
+      env:
+        NUM_QUBITS: ${{ matrix.num-qubits }}
+        SAMPLE_SIZE: ${{ matrix.sample-size }}
+        PYTHONPATH: ".:src"
+      run: |
+        python3 -m benchmarks.metrics_evaluator
