@@ -2,27 +2,18 @@
 src/qrng_dqi_optimizer/dqi_adapter.py
 
 Decoded Quantum Interferometry (DQI) Circuit Optimizer Adapter
-Updated for official kickmix C++ API binding specification.
+Updated to use official kickmix `Circuit.from_file` API.
 """
 
+import os
 import math
-from typing import Any, Dict, List, Optional
+import tempfile
+from typing import Any, Dict, Optional
 import numpy as np
 
 try:
-    import cirq
-    CIRQ_AVAILABLE = True
-except ImportError:
-    cirq = None
-    CIRQ_AVAILABLE = False
-
-try:
     import kickmix
-    # C++ 서브모듈 바인딩 호환 처리 (kickmix.kickmix 네임스페이스 수동 바인딩)
-    if hasattr(kickmix, "kickmix"):
-        km = kickmix.kickmix
-    else:
-        km = kickmix
+    km = getattr(kickmix, "kickmix", kickmix)
     KICKMIX_AVAILABLE = True
 except ImportError:
     kickmix = None
@@ -31,14 +22,6 @@ except ImportError:
 
 
 class DQIPhaseInterferometerAdapter:
-    """
-    DQI 위상 간섭계 기반 회로 최적화 어댑터 (kickmix 정식 API 호환 버전).
-
-    전달받은 num_qubits 및 양자 시드를 바탕으로 동적 위상 각도를 산출하고,
-    구글 kickmix C++ 바인딩 API(Circuit, Simulator, CircuitBuilder)를 활용하여
-    실시간 회로 최적화 및 압축률을 계측합니다.
-    """
-
     def __init__(self, num_qubits: int = 16):
         self.num_qubits = int(num_qubits)
         self.last_metrics: Dict[str, Any] = {}
@@ -58,51 +41,46 @@ class DQIPhaseInterferometerAdapter:
         else:
             phases = np.zeros(self.num_qubits, dtype=np.float64)
 
-        # 2. Kickmix 정식 C++ API 기반 회로 최적화 구동
         optimized_bytes = raw_bytes
         kickmix_used = False
 
-        if KICKMIX_AVAILABLE and km is not None:
+        # 2. kickmix.Circuit.from_file 로딩 및 처리
+        if KICKMIX_AVAILABLE and km is not None and hasattr(km, "Circuit"):
+            tmp_in = None
+            tmp_out = None
             try:
-                # kickmix C++ API 호환 회로 최적화 처리
-                if hasattr(km, "Circuit"):
-                    circuit_obj = None
-                    if hasattr(km.Circuit, "from_bytes"):
-                        circuit_obj = km.Circuit.from_bytes(raw_bytes)
-                    elif hasattr(km.Circuit, "from_kmb"):
-                        circuit_obj = km.Circuit.from_kmb(raw_bytes)
-                    elif callable(km.Circuit):
-                        try:
-                            circuit_obj = km.Circuit(raw_bytes)
-                        except Exception:
-                            pass
+                # 임시 파일 생성 후 C++ from_file 로드
+                with tempfile.NamedTemporaryFile(suffix=".kmb", delete=False) as f_in:
+                    f_in.write(raw_bytes)
+                    tmp_in = f_in.name
 
-                    # CircuitBuilder / DQI Phase Interferometer 최적화 적용
-                    if circuit_obj is not None:
-                        if hasattr(circuit_obj, "apply_phase_interferometer"):
-                            circuit_obj.apply_phase_interferometer(phases)
-                        elif hasattr(circuit_obj, "optimize"):
-                            circuit_obj.optimize(phases)
+                if hasattr(km.Circuit, "from_file"):
+                    circuit_obj = km.Circuit.from_file(tmp_in)
+                    
+                    # 위상 최적화 수행 (제공 메서드 존재 시)
+                    if hasattr(circuit_obj, "apply_phase_interferometer"):
+                        circuit_obj.apply_phase_interferometer(phases)
 
-                        if hasattr(circuit_obj, "to_bytes"):
-                            optimized_bytes = circuit_obj.to_bytes()
-                        elif hasattr(circuit_obj, "dump_kmb"):
-                            optimized_bytes = circuit_obj.dump_kmb()
+                    # 결과 내보내기
+                    with tempfile.NamedTemporaryFile(suffix=".kmb", delete=False) as f_out:
+                        tmp_out = f_out.name
+
+                    if hasattr(circuit_obj, "to_file"):
+                        circuit_obj.to_file(tmp_out)
+                        with open(tmp_out, "rb") as rf:
+                            optimized_bytes = rf.read()
                         kickmix_used = True
-                    elif hasattr(km, "CircuitBuilder"):
-                        builder = km.CircuitBuilder()
-                        if hasattr(builder, "build_from_bytes"):
-                            built_circuit = builder.build_from_bytes(raw_bytes, phases)
-                            if hasattr(built_circuit, "to_bytes"):
-                                optimized_bytes = built_circuit.to_bytes()
-                                kickmix_used = True
-
-            except Exception:
-                # 회로 해석 구조가 다르거나 파싱 불가 시 원본 보존
+            except Exception as e:
+                # 파싱 에러 시 원본 보존
                 optimized_bytes = raw_bytes
                 kickmix_used = False
+            finally:
+                if tmp_in and os.path.exists(tmp_in):
+                    os.remove(tmp_in)
+                if tmp_out and os.path.exists(tmp_out):
+                    os.remove(tmp_out)
 
-        # 3. 실측 입출력 바이트 비교 기반 동적 압축률 계산
+        # 3. 실측 메트릭 산출
         input_len = len(raw_bytes)
         output_len = len(optimized_bytes)
         bytes_reduction_ratio = (
@@ -111,7 +89,6 @@ class DQIPhaseInterferometerAdapter:
             else 0.0
         )
 
-        # 4. 실측 메트릭 집계
         self.last_metrics = {
             "num_qubits": self.num_qubits,
             "phase_angles_sample": phases[:4].tolist() if len(phases) >= 4 else phases.tolist(),
