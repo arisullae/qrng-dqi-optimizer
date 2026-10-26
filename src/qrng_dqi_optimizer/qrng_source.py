@@ -60,7 +60,7 @@ class QRNGEntropySource:
         try:
             sys.path.append(os.getcwd())
             from generate_seed import generate_and_save_si28_seed
-            generate_and_save_si28_seed(bit_length=1000000, num_runs=20)
+            generate_and_save_si28_seed(bit_length=1000000, num_runs=100)
             return True
         except Exception:
             return False
