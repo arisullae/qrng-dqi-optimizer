@@ -29,16 +29,19 @@ jobs:
         repository: 'arisullae/Si28-Phonon-28Qudit-QRNG-FastExec'
         path: 'qrng_generator'
 
-    # 3. 매트릭스 파이썬 버전 적용
+    # 3. 매트릭스 파이썬 버전 적용 및 양자 최적화 라이브러리 설치
     - name: Set up Python ${{ matrix.python-version }}
       uses: actions/setup-python@v4
       with:
         python-version: ${{ matrix.python-version }}
-
+    
     - name: Install Quantum Dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install cirq numpy pytest
+        # qualtran 및 cirq, numpy, pytest 설치
+        pip install cirq numpy pytest qualtran
+        # kickmix 패키지(또는 저장소 내 휠 파일) 설치
+        pip install kickmix || pip install ./libs/kickmix*.whl || true
         pip install -e .
 
     # 4. 진짜 양자 시드 자동 생성
