@@ -13,9 +13,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.10", "3.11", "3.12"]
-        num-qubits: [16, 32, 64, 128, 256]
-        sample-size: [256, 1024, 4096, 16384, 65536]
+        python-version: ["3.10", "3.12", "3.13"]
+        num-qubits: [16, 32, 64]
+        sample-size: [256, 1024, 4096]
 
     steps:
     # 1. qrng-dqi-optimizer 체크아웃
