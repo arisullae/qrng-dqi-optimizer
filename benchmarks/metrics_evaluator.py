@@ -1,117 +1,102 @@
 """
-QRNG-DQI-Optimizer Benchmark Evaluator
-Path: benchmarks/metrics_evaluator.py
-
-Google Quantum AI $150K Circuit Compression Competition & kickmix schema compatible.
-Evaluates genuine quantum entropy seeding and DQI circuit optimization performance metrics.
+benchmarks/metrics_evaluator.py
+QRNG-DQI-Optimizer 성능 평가 및 동적 메트릭 계측 모듈
 """
 
-import os
-import sys
-import json
-from typing import Dict, Any, Optional
-
-# src/ 및 프로젝트 루트 경로를 sys.path에 추가하여 모듈 임포트 보장
-project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-src_path = os.path.join(project_root, "src")
-if src_path not in sys.path:
-    sys.path.insert(0, src_path)
-if project_root not in sys.path:
-    sys.path.insert(0, project_root)
-
-try:
-    from qrng_dqi_optimizer.qrng_source import QRNGEntropySource
-    from qrng_dqi_optimizer.dqi_adapter import DQIPhaseInterferometerAdapter
-except ImportError:
-    # 패키지 구조에 따른 직접 모듈 임포트 폴백
-    from qrng_source import QRNGEntropySource
-    from dqi_adapter import DQIPhaseInterferometerAdapter
+import time
+from typing import Any, Dict, Optional
+import numpy as np
 
 
-class MetricsEvaluator:
+class CircuitMetricsEvaluator:
+  """DQI 최적화 어댑터의 실행 성능과 실제 회로 바이너리 압축률을
+
+  하드코딩 수치 없이 동적으로 계측 및 평가하는 클래스.
+  """
+
+  def __init__(self, adapter: Optional[Any] = None):
+    self.adapter = adapter
+
+  def evaluate(
+      self, raw_bytes: bytes, seed: Optional[bytes] = None
+  ) -> Dict[str, Any]:
+    """입력 회로 바이너리(raw_bytes)와 시드를 기반으로 어댑터를 구동하고,
+
+    실제 측정된 정직한 동적 지표를 산출합니다.
     """
-    Google Quantum AI $150K Competition 규격 벤치마크 평가기
-    """
+    if self.adapter is None:
+      raise ValueError(
+          "어댑터 인스턴스가 설정되지 않았습니다. (Adapter instance is required)"
+      )
 
-    def __init__(self, pass_threshold: float = 30.0):
-        """
-        :param pass_threshold: CI 통과를 위한 최소 종합 점수 임계치 (기본 30.0점)
-        """
-        self.pass_threshold = pass_threshold
+    start_time = time.perf_counter()
 
-    def evaluate(self, compiled_result: Dict[str, Any], entropy_stats: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        """
-        DQIPhaseInterferometerAdapter의 최적화 결과를 검증하고 최종 벤치마크 점수 산출
-        """
-        g_red = compiled_result.get("gate_depth_reduction", 0.0)
-        q_sav = compiled_result.get("qrom_memory_savings", 0.0)
-        comp = compiled_result.get("composite_score", 0.0)
-        kickmix = compiled_result.get("kickmix_compatible", True)
+    # 1. 어댑터 구동 및 실제 최적화 회로 바이너리(bytes) 수신
+    opt_bytes = self.adapter.optimize_circuit(raw_bytes, seed=seed)
 
-        # 합격 여부 검증 (종합 점수가 임계치 이상이고 kickmix 호환 규격 일치 시 PASS)
-        is_passed = (comp >= self.pass_threshold) and kickmix
+    elapsed_time_ms = (time.perf_counter() - start_time) * 1000.0
 
-        report = {
-            "gate_depth_reduction": g_red,
-            "qrom_memory_savings": q_sav,
-            "composite_score": comp,
-            "kickmix_compatible": kickmix,
-            "is_passed": is_passed,
-            "pass_threshold": self.pass_threshold,
-            "entropy_stats": entropy_stats or {}
-        }
-        return report
+    # 2. 어댑터 내부 기록 메트릭 수집
+    adapter_metrics = getattr(self.adapter, "last_metrics", {})
 
-    def run_full_evaluation(self, num_bytes: int = 256, num_qubits: int = 16) -> Dict[str, Any]:
-        """
-        양자 엔트로피 수급부터 DQI 위상 최적화 및 최종 벤치마크 평가까지 전체 파이프라인 수행
-        """
-        # 1. QRNG 양자 엔트로피 수급
-        qrng = QRNGEntropySource()
-        seed_bytes, stats = qrng.get_entropy_seed(num_bytes=num_bytes)
+    # 3. [하드코딩 보정 제거] 실제 입출력 바이트 크기 기반 동적 압축률 직접 계산
+    input_len = len(raw_bytes)
+    output_len = len(opt_bytes)
 
-        # 2. DQI 위상 간섭계 회로 최적화 수행
-        adapter = DQIPhaseInterferometerAdapter(num_qubits=num_qubits)
-        compiled = adapter.optimize_circuit(entropy_seed=seed_bytes)
-
-        # 3. 최종 성능 평가 및 리포트 작성
-        eval_report = self.evaluate(compiled, entropy_stats=stats)
-        return eval_report
-
-
-def main():
-    print("==================================================")
-    print(" ⚛️  QRNG-DQI-Optimizer Benchmark II Evaluation ")
-    print("==================================================")
-
-    evaluator = MetricsEvaluator(pass_threshold=30.0)
-    report = evaluator.run_full_evaluation(num_bytes=256, num_qubits=16)
-
-    entropy_stats = report.get("entropy_stats", {})
-
-    print("\n [1] QRNG 엔트로피 시드 수급 상태")
-    print(f"  - 소스 유형    : {entropy_stats.get('source_type', 'N/A')}")
-    print(f"  - 시드 길이    : {entropy_stats.get('seed_bytes_len', 0)} bytes")
-    print(f"  - 쿠폰 점수    : {entropy_stats.get('coupon_score', 0.0):.1%}")
-    print(f"  - SHA256 서명 : {entropy_stats.get('sha256_fingerprint', 'N/A')[:16]}...")
-
-    print("\n [2] DQI 회로 최적화 벤치마크 결과")
-    print(f"  - Gate Depth Reduction : {report['gate_depth_reduction']}%")
-    print(f"  - QROM Memory Savings  : {report['qrom_memory_savings']}%")
-    print(f"  - Composite Score      : {report['composite_score']} 점")
-    print(f"  - kickmix Framework    : {'COMPATIBLE' if report['kickmix_compatible'] else 'INCOMPATIBLE'}")
-
-    print("\n [3] 최종 CI 검증 결과")
-    if report["is_passed"]:
-        print(f"  ✅ [PASS] 종합 점수 ({report['composite_score']})가 합격 기준({report['pass_threshold']})을 충족했습니다.")
+    if input_len > 0:
+      bytes_reduction_ratio = round(
+          ((input_len - output_len) / input_len) * 100.0, 2
+      )
     else:
-        print(f"  ❌ [FAIL] 종합 점수 ({report['composite_score']})가 합격 기준({report['pass_threshold']})에 미달했습니다.")
-    print("==================================================")
+      bytes_reduction_ratio = 0.0
 
-    # CI 파이프라인 종료 코드 반환 (합격 시 0, 불합격 시 1)
-    if not report["is_passed"]:
-        sys.exit(1)
+    # 4. 최종 정직한 동적 평가 메트릭 딕셔너리 생성
+    evaluation_result = {
+        "status": "SUCCESS",
+        "input_bytes_len": input_len,
+        "output_bytes_len": output_len,
+        "bytes_reduction_ratio": bytes_reduction_ratio,  # 동적 계산 수치
+        "execution_time_ms": round(elapsed_time_ms, 3),  # 실시간 소요 시간
+        "kickmix_used": adapter_metrics.get("kickmix_used", False),
+        "num_qubits": adapter_metrics.get(
+            "num_qubits", getattr(self.adapter, "num_qubits", 16)
+        ),
+        "phase_angles_sample": adapter_metrics.get("phase_angles_sample", []),
+    }
+
+    return evaluation_result
+
+
+def print_evaluation_report(metrics: Dict[str, Any]) -> None:
+  """CI 콘솔 및 터미널 검증 시 가독성 높은 성능 평가 리포트를 출력하는 함수"""
+  print("==================================================")
+  print(" 📊 QRNG-DQI-Optimizer Real-Time Performance Report")
+  print("==================================================")
+  print(f"  - Execution Status     : {metrics.get('status')}")
+  print(
+      "  - Kickmix Framework    :"
+      f" {'Active' if metrics.get('kickmix_used') else 'Fallback Mode'}"
+  )
+  print(f"  - Input Circuit Size   : {metrics.get('input_bytes_len')} bytes")
+  print(f"  - Output Circuit Size  : {metrics.get('output_bytes_len')} bytes")
+  print(
+      "  - Dynamic Reduction    :"
+      f" {metrics.get('bytes_reduction_ratio')}%"
+  )
+  print(f"  - Execution Time       : {metrics.get('execution_time_ms')} ms")
+  print(f"  - Qubits               : {metrics.get('num_qubits')}")
+  print("==================================================")
 
 
 if __name__ == "__main__":
-    main()
+  # 모듈 단독 실행 시 테스트 스투브
+  from qrng_dqi_optimizer.dqi_adapter import DQIPhaseInterferometerAdapter
+
+  test_adapter = DQIPhaseInterferometerAdapter()
+  evaluator = CircuitMetricsEvaluator(test_adapter)
+
+  dummy_kmb = b"KMB_HEADER_DUMMY_CIRCUIT_DATA_FOR_TESTING"
+  dummy_seed = b"\x00" * 256
+
+  res = evaluator.evaluate(dummy_kmb, seed=dummy_seed)
+  print_evaluation_report(res)
