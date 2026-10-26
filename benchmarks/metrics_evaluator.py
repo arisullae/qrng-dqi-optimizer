@@ -8,8 +8,6 @@ import sys
 import time
 from typing import Any, Dict, Optional
 
-import numpy as np
-
 
 class CircuitMetricsEvaluator:
     """DQI 최적화 어댑터의 실행 성능과 실제 회로 바이너리 압축률을
@@ -25,13 +23,8 @@ class CircuitMetricsEvaluator:
         seed: Optional[bytes] = None,
         seed_stats: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
-        """입력 회로 바이너리(raw_bytes)와 시드를 기반으로 어댑터를 구동하고,
-        실제 측정된 정직한 동적 지표를 산출합니다.
-        """
         if self.adapter is None:
-            raise ValueError(
-                "어댑터 인스턴스가 설정되지 않았증니다. (Adapter instance is required)"
-            )
+            raise ValueError("어댑터 인스턴스가 설정되지 않았습니다.")
 
         start_time = time.perf_counter()
 
@@ -39,26 +32,22 @@ class CircuitMetricsEvaluator:
         opt_bytes = self.adapter.optimize_circuit(raw_bytes, seed=seed)
         elapsed_time_ms = (time.perf_counter() - start_time) * 1000.0
 
-        # 2. 어댑터 내부 기록 메트릭 수집
         adapter_metrics = getattr(self.adapter, "last_metrics", {})
 
-        # 3. 실측 입출력 바이트 크기 기반 동적 압축률 직접 계산
         input_len = len(raw_bytes)
         output_len = len(opt_bytes)
-        if input_len > 0:
-            bytes_reduction_ratio = round(
-                ((input_len - output_len) / input_len) * 100.0, 2
-            )
-        else:
-            bytes_reduction_ratio = 0.0
+        bytes_reduction_ratio = (
+            round(((input_len - output_len) / input_len) * 100.0, 2)
+            if input_len > 0
+            else 0.0
+        )
 
-        # 4. 최종 정직한 동적 평가 메트릭 딕셔너리 생성
-        evaluation_result = {
+        return {
             "status": "SUCCESS",
             "input_bytes_len": input_len,
             "output_bytes_len": output_len,
-            "bytes_reduction_ratio": bytes_reduction_ratio,  # 동적 계산 수치
-            "execution_time_ms": round(elapsed_time_ms, 3),  # 실시간 소요 시간
+            "bytes_reduction_ratio": bytes_reduction_ratio,
+            "execution_time_ms": round(elapsed_time_ms, 3),
             "kickmix_used": adapter_metrics.get("kickmix_used", False),
             "num_qubits": adapter_metrics.get(
                 "num_qubits", getattr(self.adapter, "num_qubits", 16)
@@ -67,11 +56,8 @@ class CircuitMetricsEvaluator:
             "seed_stats": seed_stats or {},
         }
 
-        return evaluation_result
-
 
 def print_evaluation_report(metrics: Dict[str, Any]) -> None:
-    """CI 콘솔 및 터미널 검증 시 가독성 높은 성능 평가 리포트를 출력하는 함수"""
     print("==================================================")
     print(" 📊 QRNG-DQI-Optimizer Real-Time Performance Report")
     print("==================================================")
@@ -98,30 +84,34 @@ def print_evaluation_report(metrics: Dict[str, Any]) -> None:
 
 
 if __name__ == "__main__":
-    # 1. CI 매트릭스 환경변수 동적 파싱 (NUM_QUBITS, SAMPLE_SIZE)
+    # 1. CI 매트릭스 환경변수 파싱
     num_qubits = int(os.environ.get("NUM_QUBITS", 16))
     sample_size = int(os.environ.get("SAMPLE_SIZE", 256))
+    circuit_file_path = os.environ.get("CIRCUIT_FILE_PATH", "data/target_circuit.kmb")
 
-    # 2. DQI 어댑터 및 QRNG 엔트로피 시드 모듈 임포트
     try:
         from qrng_dqi_optimizer.dqi_adapter import DQIPhaseInterferometerAdapter
         from qrng_dqi_optimizer.qrng_source import QRNGEntropySource
     except ImportError:
-        # PYTHONPATH가 패키지 루트를 가리킬 경우 대비
         from src.qrng_dqi_optimizer.dqi_adapter import DQIPhaseInterferometerAdapter
         from src.qrng_dqi_optimizer.qrng_source import QRNGEntropySource
 
-    # 3. 어댑터 인스턴스화 (동적 num_qubits 수치 적용)
-    test_adapter = DQIPhaseInterferometerAdapter(num_qubits=num_qubits)
-    evaluator = CircuitMetricsEvaluator(test_adapter)
+    # 2. 실제 회로 파일(.kmb / .kmx) 로드 (임시 가짜 더미 바이트 완전 제거)
+    if os.path.exists(circuit_file_path):
+        with open(circuit_file_path, "rb") as f:
+            raw_circuit_bytes = f.read()
+    else:
+        # 회로 파일이 존재하지 않을 경우 파일 경로 탐색 안내 후 종료
+        print(f"[Notice] Circuit file not found at '{circuit_file_path}'.")
+        print("Place a valid .kmb or .kmx circuit file in the target directory.")
+        sys.exit(0)
 
-    # 4. Si28 포논 양자 난수 시드 및 엔트로피 검정 메타데이터 인출
+    # 3. 양자 난수 시드 공급 및 어댑터 평가 구동
     qrng_source = QRNGEntropySource()
     raw_seed, seed_stats = qrng_source.get_entropy_seed(num_bytes=sample_size)
 
-    # 5. 테스트용 샘플 회로 바이너리 생성
-    dummy_kmb = b"KMB_HEADER_DUMMY_CIRCUIT_DATA_FOR_TESTING_" + (b"\x00" * 128)
+    test_adapter = DQIPhaseInterferometerAdapter(num_qubits=num_qubits)
+    evaluator = CircuitMetricsEvaluator(test_adapter)
 
-    # 6. 평가 구동 및 결과 리포트 출력
-    res = evaluator.evaluate(dummy_kmb, seed=raw_seed, seed_stats=seed_stats)
+    res = evaluator.evaluate(raw_circuit_bytes, seed=raw_seed, seed_stats=seed_stats)
     print_evaluation_report(res)
