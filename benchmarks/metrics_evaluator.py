@@ -108,7 +108,7 @@ if __name__ == "__main__":
       "--qubits", type=int, default=16, help="Number of active qubits"
   )
   parser.add_argument(
-      "--seed-size", type=int, default=1024, help="Sample size"
+      "--seed_size", type=int, default=1024, help="Sample size"
   )
   args = parser.parse_args()
 
