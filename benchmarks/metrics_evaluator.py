@@ -23,6 +23,16 @@ class CircuitMetricsEvaluator:
     if self.adapter is None:
       raise ValueError("어댑터 인스턴스가 설정되지 않았습니다.")
 
+  # 어댑터 존재 검증 직후에 환경변수 동기화 코드 삽입
+    env_qubits = os.environ.get("NUM_QUBITS")
+    if env_qubits is not None:
+      try:
+        target_qubits = int(env_qubits)
+        if hasattr(self.adapter, "num_qubits"):
+          self.adapter.num_qubits = target_qubits
+      except ValueError:
+        pass
+
     start_time = time.perf_counter()
     opt_bytes = self.adapter.optimize_circuit(raw_bytes, seed=seed)
     elapsed_time_ms = (time.perf_counter() - start_time) * 1000.0
@@ -45,7 +55,8 @@ class CircuitMetricsEvaluator:
         "execution_time_ms": round(elapsed_time_ms, 3),
         "kickmix_used": adapter_metrics.get("kickmix_used", False),
         "num_qubits": adapter_metrics.get(
-            "num_qubits", getattr(self.adapter, "num_qubits", 16)
+            "num_qubits",
+            getattr(self.adapter, "num_qubits", int(os.environ.get("NUM_QUBITS", 16)))
         ),
         "phase_angles_sample": adapter_metrics.get("phase_angles_sample", []),
     }
