@@ -96,7 +96,7 @@ def print_evaluation_report(metrics: Dict[str, Any]) -> None:
       f" {metrics.get('bytes_reduction_ratio')}%"
   )
   print(f"  - Execution Time       : {metrics.get('execution_time_ms')} ms")
-  print(f"  - Qubits        : {metrics.get('num_qubits')}")
+  print(f"  - Qubits               : {metrics.get('num_qubits')}")
   print(f"  - Sample Size          : {metrics.get('sample_size')}")
   print("==================================================")
 
