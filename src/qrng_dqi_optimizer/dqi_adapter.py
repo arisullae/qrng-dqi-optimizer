@@ -58,7 +58,7 @@ class DQIPhaseInterferometerAdapter:
             circuit_bloq, phases
         )
         optimized_bytes = kickmix.dump_kmb_to_bytes(optimized_bloq)
-      except Exception:
+      except Exception as e:
         optimized_bytes = raw_bytes
     else:
       optimized_bytes = raw_bytes
